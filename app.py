@@ -52,6 +52,7 @@ def criar_pix():
         response = requests.post(EVOPAY_URL, json=payload, headers=headers, timeout=30)
         print(f"📥 Resposta EvoPay: {response.status_code} - {response.text}")
         
+        # Retorna a resposta da EvoPay
         return jsonify(response.json()), response.status_code
         
     except Exception as e:
@@ -60,9 +61,11 @@ def criar_pix():
 
 @app.route('/api/verificar_pix/<transaction_id>', methods=['GET'])
 def verificar_pix(transaction_id):
+    # EvoPay usa webhook, então retornamos pending para verificação manual
     return jsonify({
         'status': 'pending',
-        'message': 'Verificação manual necessária.'
+        'message': 'Verificação manual necessária.',
+        'transaction_id': transaction_id
     })
 
 if __name__ == '__main__':
