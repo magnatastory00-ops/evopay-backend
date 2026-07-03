@@ -30,12 +30,16 @@ def criar_pix():
         if not valor:
             return jsonify({'error': 'Valor nao informado'}), 400
         
-        valor_centavos = int(float(valor) * 100)
+        # 🔥 CORREÇÃO: Converte para centavos corretamente
+        valor = float(valor)
+        valor_centavos = int(valor * 100)
         valor_reais = valor_centavos / 100
-        print(f"Valor: R$ {valor_reais:.2f}")
+        print(f"Valor recebido: R$ {valor_reais:.2f}")
         
         if valor_centavos > 100000:
-            return jsonify({'error': 'Valor maximo R$ 1.000,00'}), 400
+            return jsonify({
+                'error': f'Valor maximo R$ 1.000,00'
+            }), 400
         
         headers = {
             'API-Key': EVOPAY_API_KEY,
@@ -44,7 +48,7 @@ def criar_pix():
         
         payload = {
             "amount": valor_centavos,
-            "callbackUrl": "https://evopay-backend7.onrender.com/webhook",
+            "callbackUrl": "https://evopay-backend.onrender.com/webhook",
             "payerName": "Cliente Magnata Store",
             "payerDocument": "12345678909",
             "payerEmail": "cliente@magnata.com",
@@ -58,22 +62,14 @@ def criar_pix():
         
         data_resp = response.json()
         
-        # 🔥 PEGA OS DADOS DO PIX DA RESPOSTA
+        # 🔥 PEGA OS DADOS DO PIX
         pix_data = data_resp.get('pix', {})
         qr_code = pix_data.get('pix_qr_code') or data_resp.get('qr_code') or data_resp.get('qrCode') or ''
-        
-        # 🔥 TENTA PEGAR O CÓDIGO PIX EM VÁRIOS LUGARES
-        codigo_pix = (pix_data.get('pix_code') or 
-                     pix_data.get('brcode') or 
-                     pix_data.get('pix_qr_code') or 
-                     data_resp.get('pix_code') or 
-                     data_resp.get('brcode') or 
-                     data_resp.get('pix') or '')
+        codigo_pix = pix_data.get('pix_code') or pix_data.get('brcode') or data_resp.get('pix_code') or data_resp.get('brcode') or ''
         
         print(f"QR Code: {qr_code[:50] if qr_code else 'Nao encontrado'}...")
         print(f"Código PIX: {codigo_pix[:50] if codigo_pix else 'Nao encontrado'}...")
         
-        # 🔥 SALVA O QR CODE E CÓDIGO NA TRANSAÇÃO
         if response.ok and data_resp.get('id'):
             transacoes[data_resp['id']] = {
                 'status': 'pending',
@@ -82,7 +78,6 @@ def criar_pix():
                 'codigo_pix': codigo_pix
             }
         
-        # 🔥 ADICIONA OS DADOS NA RESPOSTA
         data_resp['qr_code'] = qr_code
         data_resp['codigo_pix'] = codigo_pix
         
