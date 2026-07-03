@@ -10,24 +10,23 @@ EVOPAY_URL = "https://pix.evopay.cash/v1/pix/"
 
 @app.route('/')
 def home():
-    return jsonify({"status": "ok"})
+    return jsonify({"status": "EvoPay API Gateway rodando!", "version": "1.0"})
 
 @app.route('/api/criar_pix', methods=['POST'])
 def criar_pix():
     try:
-        print("=== REQUISICAO RECEBIDA ===")
         data = request.json
-        print(f"Dados: {data}")
+        print(f"Dados recebidos: {data}")
         
-        valor = data.get('amount')
-        if not valor:
+        valor_centavos = data.get('amount')
+        
+        if not valor_centavos:
             return jsonify({'error': 'Valor nao informado'}), 400
         
-        valor_centavos = int(valor)
-        print(f"Valor em centavos: {valor_centavos}")
-        
         if valor_centavos > 100000:
-            return jsonify({'error': 'Valor maximo R$ 1.000,00'}), 400
+            return jsonify({
+                'error': f'Valor R$ {valor_centavos/100:.2f} nao permitido. Maximo: R$ 1.000,00'
+            }), 400
         
         headers = {
             'API-Key': EVOPAY_API_KEY,
@@ -35,15 +34,18 @@ def criar_pix():
         }
         
         payload = {
-            valor = float(data.get("amount"))
-            "callbackUrl": "https://magnatastore.netlify.app/"
+            "amount": valor_centavos,
+            "callbackUrl": "https://magnatastore.netlify.app/",
+            "payerName": "Cliente Magnata Store",
+            "payerDocument": "12345678909",
+            "payerEmail": "cliente@magnata.com",
+            "externalReference": f"pedido_{valor_centavos}"
         }
         
-        print(f"Enviando: {payload}")
+        print(f"Enviando para EvoPay: {payload}")
         
         response = requests.post(EVOPAY_URL, json=payload, headers=headers, timeout=30)
-        print(f"Resposta EvoPay: {response.status_code}")
-        print(f"Resposta texto: {response.text}")
+        print(f"Resposta EvoPay: {response.status_code} - {response.text}")
         
         return jsonify(response.json()), response.status_code
         
@@ -53,7 +55,11 @@ def criar_pix():
 
 @app.route('/api/verificar_pix/<transaction_id>', methods=['GET'])
 def verificar_pix(transaction_id):
-    return jsonify({'status': 'pending', 'transaction_id': transaction_id})
+    return jsonify({
+        'status': 'pending',
+        'message': 'Verificacao manual necessaria.',
+        'transaction_id': transaction_id
+    })
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
