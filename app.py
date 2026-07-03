@@ -12,25 +12,28 @@ EVOPAY_URL = "https://pix.evopay.cash/v1/pix/"
 def home():
     return jsonify({"status": "EvoPay API Gateway rodando!", "version": "1.0"})
 
-@app.route('/api/criar_pix', methods=['POST'])
+@app.route('/api/criar_pix', methods=['POST', 'OPTIONS'])
 def criar_pix():
+    if request.method == 'OPTIONS':
+        return '', 200
+    
     try:
         data = request.json
         print(f"Dados recebidos: {data}")
         
-        valor_centavos = data.get('amount')
+        valor = data.get('amount')
+        print(f"Valor recebido: {valor}")
         
-        if not valor_centavos:
+        if valor is None:
             return jsonify({'error': 'Valor nao informado'}), 400
         
-        valor_centavos = int(valor_centavos)
+        valor_centavos = int(valor)
+        print(f"Valor em centavos: {valor_centavos}")
         
         if valor_centavos > 100000:
             return jsonify({
                 'error': f'Valor R$ {valor_centavos/100:.2f} nao permitido. Maximo: R$ 1.000,00'
             }), 400
-        
-        print(f"Valor em centavos: {valor_centavos}")
         
         headers = {
             'API-Key': EVOPAY_API_KEY,
@@ -58,8 +61,6 @@ def criar_pix():
         
         return jsonify(response.json()), response.status_code
         
-    except requests.exceptions.Timeout:
-        return jsonify({'error': 'Tempo limite excedido'}), 504
     except Exception as e:
         print(f"Erro: {e}")
         return jsonify({'error': str(e)}), 500
