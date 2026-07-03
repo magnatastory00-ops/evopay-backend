@@ -53,17 +53,40 @@ def criar_pix():
             "externalReference": f"pedido_{int(valor_reais)}"
         }
         
-        print(f"Enviando: {payload}")
+        print(f"Enviando para EvoPay: {payload}")
         
         response = requests.post(EVOPAY_URL, json=payload, headers=headers, timeout=30)
-        print(f"Resposta: {response.status_code} - {response.text}")
+        print(f"Status EvoPay: {response.status_code}")
+        print(f"Resposta EvoPay (TEXTO): {response.text}")
         
         data_resp = response.json()
+        print(f"Resposta EvoPay (JSON): {json.dumps(data_resp, indent=2)}")
         
-        # 🔥 PEGA O QR CODE E CÓDIGO PIX
-        pix_data = data_resp.get('pix', {})
-        qr_code = pix_data.get('pix_qr_code') or data_resp.get('qr_code') or ''
-        codigo_pix = pix_data.get('pix_code') or pix_data.get('brcode') or ''
+        # 🔥 TENTA PEGAR O QR CODE EM VÁRIOS LUGARES
+        qr_code = ''
+        codigo_pix = ''
+        
+        # Verifica se tem pix dentro da resposta
+        if 'pix' in data_resp:
+            pix = data_resp['pix']
+            qr_code = pix.get('pix_qr_code', '')
+            codigo_pix = pix.get('pix_code', '')
+            print(f"PIX encontrado: QR={qr_code[:50]}... CODIGO={codigo_pix[:50]}...")
+        else:
+            # Tenta pegar diretamente
+            qr_code = data_resp.get('pix_qr_code', '') or data_resp.get('qr_code', '') or data_resp.get('qrCode', '')
+            codigo_pix = data_resp.get('pix_code', '') or data_resp.get('brcode', '') or data_resp.get('pix', '')
+            print(f"QR direto: {qr_code[:50]}... CODIGO direto: {codigo_pix[:50]}...")
+        
+        # 🔥 SE NÃO ACHOU, USA O QR CODE COMO CÓDIGO (FALLBACK)
+        if not codigo_pix and qr_code:
+            codigo_pix = qr_code
+            print("Usando QR Code como código PIX (fallback)")
+        
+        # 🔥 SE AINDA NÃO ACHOU, GERA UM QR CODE SIMULADO
+        if not qr_code and codigo_pix:
+            qr_code = f"https://api.qrserver.com/v1/create-qr-code/?size=250x250&data={codigo_pix}"
+            print("QR Code gerado via API externa")
         
         transaction_id = data_resp.get('id')
         
@@ -78,6 +101,7 @@ def criar_pix():
             print(f"✅ Transação salva: {transaction_id}")
             print(f"📊 Total de transações: {len(transacoes)}")
         
+        # 🔥 ADICIONA OS DADOS NA RESPOSTA
         data_resp['qr_code'] = qr_code
         data_resp['codigo_pix'] = codigo_pix
         
@@ -94,7 +118,6 @@ def webhook():
         data = request.json
         print(f"📥 WEBHOOK RECEBIDO: {data}")
         
-        # Verifica diferentes formatos de resposta
         status = data.get('status') or data.get('payment_status') or data.get('state')
         transaction_id = data.get('id') or data.get('transaction_id') or data.get('externalReference')
         
@@ -106,7 +129,6 @@ def webhook():
                     transacoes[transaction_id]['status'] = 'paid'
                     print(f"✅ PAGAMENTO CONFIRMADO: {transaction_id}")
                 else:
-                    # Salva transação que veio pelo webhook
                     transacoes[transaction_id] = {
                         'status': 'paid',
                         'valor': 0,
@@ -115,8 +137,6 @@ def webhook():
                         'timestamp': time.time()
                     }
                     print(f"✅ Nova transação confirmada via webhook: {transaction_id}")
-            else:
-                print(f"⚠️ Webhook sem ID: {data}")
         
         return jsonify({'status': 'ok'}), 200
     except Exception as e:
@@ -125,7 +145,6 @@ def webhook():
 
 @app.route('/api/verificar_pix/<transaction_id>', methods=['GET'])
 def verificar_pix(transaction_id):
-    """Verifica o status do pagamento"""
     print(f"🔍 Verificando transação: {transaction_id}")
     print(f"📊 Transações disponíveis: {list(transacoes.keys())}")
     
@@ -141,11 +160,10 @@ def verificar_pix(transaction_id):
             'valor': dados.get('valor', 0)
         })
     
-    print(f"❌ Transação não encontrada: {transaction_id}")
     return jsonify({
         'status': 'pending',
         'transaction_id': transaction_id,
-        'message': 'Transação não encontrada. Aguarde alguns segundos e tente novamente.'
+        'message': 'Transação não encontrada. Aguarde alguns segundos.'
     })
 
 if __name__ == '__main__':
