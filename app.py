@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 import requests
 from flask_cors import CORS
 import json
+import time
 
 app = Flask(__name__)
 CORS(app)
@@ -43,7 +44,6 @@ def criar_pix():
             'Content-Type': 'application/json'
         }
         
-        # 🔥 WEBHOOK CONFIGURADO
         payload = {
             "amount": valor_centavos,
             "callbackUrl": "https://evopay-backend.onrender.com/webhook",
@@ -65,14 +65,18 @@ def criar_pix():
         qr_code = pix_data.get('pix_qr_code') or data_resp.get('qr_code') or ''
         codigo_pix = pix_data.get('pix_code') or pix_data.get('brcode') or ''
         
-        if response.ok and data_resp.get('id'):
-            transacoes[data_resp['id']] = {
+        transaction_id = data_resp.get('id')
+        
+        if response.ok and transaction_id:
+            transacoes[transaction_id] = {
                 'status': 'pending',
                 'valor': valor_reais,
                 'qr_code': qr_code,
-                'codigo_pix': codigo_pix
+                'codigo_pix': codigo_pix,
+                'timestamp': time.time()
             }
-            print(f"Transação salva: {data_resp['id']}")
+            print(f"✅ Transação salva: {transaction_id}")
+            print(f"📊 Total de transações: {len(transacoes)}")
         
         data_resp['qr_code'] = qr_code
         data_resp['codigo_pix'] = codigo_pix
@@ -80,56 +84,68 @@ def criar_pix():
         return jsonify(data_resp), response.status_code
         
     except Exception as e:
-        print(f"Erro: {e}")
+        print(f"❌ Erro: {e}")
         return jsonify({'error': str(e)}), 500
 
-# 🔥 WEBHOOK - A EvoPay CHAMA AQUI QUANDO PAGAREM
+# 🔥 WEBHOOK
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
         data = request.json
         print(f"📥 WEBHOOK RECEBIDO: {data}")
         
-        # Verifica se é confirmação de pagamento
-        status = data.get('status') or data.get('payment_status')
-        transaction_id = data.get('id') or data.get('transaction_id')
+        # Verifica diferentes formatos de resposta
+        status = data.get('status') or data.get('payment_status') or data.get('state')
+        transaction_id = data.get('id') or data.get('transaction_id') or data.get('externalReference')
         
-        if status == 'paid' and transaction_id:
-            if transaction_id in transacoes:
-                transacoes[transaction_id]['status'] = 'paid'
-                print(f"✅ PAGAMENTO CONFIRMADO: {transaction_id}")
+        print(f"Status: {status}, ID: {transaction_id}")
+        
+        if status in ['paid', 'confirmed', 'approved']:
+            if transaction_id:
+                if transaction_id in transacoes:
+                    transacoes[transaction_id]['status'] = 'paid'
+                    print(f"✅ PAGAMENTO CONFIRMADO: {transaction_id}")
+                else:
+                    # Salva transação que veio pelo webhook
+                    transacoes[transaction_id] = {
+                        'status': 'paid',
+                        'valor': 0,
+                        'qr_code': '',
+                        'codigo_pix': '',
+                        'timestamp': time.time()
+                    }
+                    print(f"✅ Nova transação confirmada via webhook: {transaction_id}")
             else:
-                print(f"⚠️ Transação não encontrada: {transaction_id}")
-                # Salva mesmo se não estiver na lista (por segurança)
-                transacoes[transaction_id] = {
-                    'status': 'paid',
-                    'valor': 0,
-                    'qr_code': '',
-                    'codigo_pix': ''
-                }
+                print(f"⚠️ Webhook sem ID: {data}")
         
         return jsonify({'status': 'ok'}), 200
     except Exception as e:
-        print(f"Erro no webhook: {e}")
+        print(f"❌ Erro no webhook: {e}")
         return jsonify({'status': 'error'}), 500
 
 @app.route('/api/verificar_pix/<transaction_id>', methods=['GET'])
 def verificar_pix(transaction_id):
     """Verifica o status do pagamento"""
+    print(f"🔍 Verificando transação: {transaction_id}")
+    print(f"📊 Transações disponíveis: {list(transacoes.keys())}")
+    
     if transaction_id in transacoes:
         dados = transacoes[transaction_id]
+        status = dados.get('status', 'pending')
+        print(f"📌 Status: {status}")
         return jsonify({
-            'status': dados.get('status', 'pending'),
+            'status': status,
             'transaction_id': transaction_id,
             'qr_code': dados.get('qr_code', ''),
             'codigo_pix': dados.get('codigo_pix', ''),
             'valor': dados.get('valor', 0)
         })
     
+    print(f"❌ Transação não encontrada: {transaction_id}")
     return jsonify({
         'status': 'pending',
         'transaction_id': transaction_id,
-        'message': 'Aguardando pagamento...'
+        'message': 'Transação não encontrada. Aguarde alguns segundos e tente novamente.'
     })
 
 if __name__ == '__main__':
