@@ -7,6 +7,7 @@ CORS(app)
 
 # ===== CONFIGURAÇÕES EVOPAY ===== #
 EVOPAY_API_KEY = "1dec524a-3b3e-429f-8583-99a8f2dafa20"
+# 🔥 URL CORRETA (sem duplicação)
 EVOPAY_URL = "https://pix.evopay.cash/v1/pix/"
 
 @app.route('/')
@@ -25,7 +26,6 @@ def criar_pix():
             return jsonify({'error': 'Valor não informado'}), 400
         
         # 🔥 CORREÇÃO: Garantir que está em centavos
-        # Se for menor que 100, é porque está em reais
         if valor_centavos < 100:
             valor_centavos = int(valor_centavos * 100)
         
@@ -42,9 +42,14 @@ def criar_pix():
             'Content-Type': 'application/json'
         }
         
+        # 🔥 PAYLOAD CORRETO da EvoPay
         payload = {
-            'amount': valor_centavos,
-            'callbackUrl': 'https://magnatastore.netlify.app/'
+            "amount": valor_centavos,
+            "callbackUrl": "https://magnatastore.netlify.app/",
+            "payerName": "Cliente Magnata Store",
+            "payerDocument": "12345678909",
+            "payerEmail": "cliente@magnata.com",
+            "externalReference": f"pedido_{valor_centavos}"
         }
         
         print(f"📤 Enviando para EvoPay: {payload}")
@@ -52,16 +57,24 @@ def criar_pix():
         response = requests.post(EVOPAY_URL, json=payload, headers=headers, timeout=30)
         print(f"📥 Resposta EvoPay: {response.status_code} - {response.text}")
         
+        # 🔥 Se a resposta for 404, tenta sem a barra no final
+        if response.status_code == 404:
+            # Tenta a URL sem a barra
+            url_sem_barra = "https://pix.evopay.cash/v1/pix"
+            response = requests.post(url_sem_barra, json=payload, headers=headers, timeout=30)
+            print(f"📥 Tentativa sem barra: {response.status_code} - {response.text}")
+        
         # Retorna a resposta da EvoPay
         return jsonify(response.json()), response.status_code
         
+    except requests.exceptions.Timeout:
+        return jsonify({'error': 'Tempo limite excedido'}), 504
     except Exception as e:
         print(f"❌ Erro: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/verificar_pix/<transaction_id>', methods=['GET'])
 def verificar_pix(transaction_id):
-    # EvoPay usa webhook, então retornamos pending para verificação manual
     return jsonify({
         'status': 'pending',
         'message': 'Verificação manual necessária.',
