@@ -1,77 +1,76 @@
-async function gerarPixEvopay() {
-    if (carrinho.length === 0) {
-        alert('Carrinho vazio!');
-        return;
-    }
+from flask import Flask, request, jsonify
+import requests
+from flask_cors import CORS
 
-    const total = calcularTotal();
-    
-    // 🔥 VALIDAÇÃO: Limite de R$ 1.000
-    if (total > 1000) {
-        document.getElementById('pagamentoConteudo').innerHTML = `
-            <div style="background:rgba(255,170,68,0.1);border:1px solid #ffaa44;padding:15px;border-radius:10px;margin:10px 0">
-                ⚠️ <strong>Valor muito alto!</strong> O valor máximo por transação é R$ 1.000.<br><br>
-                Seu total é <strong>R$ ${total.toFixed(2)}</strong>.<br>
-                <span style="color:#ffaa44;">💡 Divida sua compra em várias de até R$ 1.000.</span>
-            </div>
-            <button class="btn-finalizar" onclick="fecharModal('modalPagamento')">Fechar</button>
-        `;
-        abrirModal('modalPagamento');
-        return;
-    }
+app = Flask(__name__)
+CORS(app)
 
-    // 🔥 CORREÇÃO: Envia o valor EM CENTAVOS (multiplica por 100)
-    const valorCentavos = Math.round(total * 100);
+EVOPAY_API_KEY = "1dec524a-3b3e-429f-8583-99a8f2dafa20"
+EVOPAY_URL = "https://pix.evopay.cash/v1/pix/"
 
-    document.getElementById('pagamentoConteudo').innerHTML = '<div style="text-align:center;padding:30px">⏳ Gerando PIX...</div>';
-    abrirModal('modalPagamento');
+@app.route('/')
+def home():
+    return jsonify({"status": "EvoPay API Gateway rodando!", "version": "1.0"})
 
-    try {
-        const response = await fetch(`${BACKEND_URL}/api/criar_pix`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ 
-                amount: valorCentavos  // 🔥 JÁ EM CENTAVOS
-            })
-        });
-
-        const data = await response.json();
-
-        if (response.ok && data.id) {
-            const qrCode = data.pix_qr_code || data.qr_code || '';
-            const codigoPix = data.pix_code || data.brcode || data.pix_qr_code || qrCode;
-
-            document.getElementById('pagamentoConteudo').innerHTML = `
-                <div class="qr-code">
-                    <img src="${qrCode || `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(codigoPix)}`}" alt="QR Code PIX">
-                </div>
-                <div class="pix-code">
-                    <p>Código PIX:</p>
-                    <div class="codigo" id="codigoPix">${codigoPix}</div>
-                    <button class="copiar-btn" onclick="copiarPix()">📋 Copiar Código</button>
-                </div>
-                <div style="background:rgba(0,255,136,0.1);border:1px solid #00ff88;padding:10px;border-radius:8px;margin:10px 0">
-                    ✅ Pagamento gerado com sucesso!<br>
-                    <small>Valor: R$ ${total.toFixed(2)}</small><br>
-                    <small>ID: ${data.id}</small>
-                </div>
-                <button class="btn-finalizar" onclick="verificarPagamentoEvopay('${data.id}')">
-                    ✅ JÁ PAGUEI - CONFIRMAR
-                </button>
-            `;
-        } else {
-            throw new Error(data.message || data.error || 'Erro ao gerar PIX');
+@app.route('/api/criar_pix', methods=['POST'])
+def criar_pix():
+    try:
+        data = request.json
+        print(f"Dados recebidos: {data}")
+        
+        valor_centavos = data.get('amount')
+        
+        if not valor_centavos:
+            return jsonify({'error': 'Valor nao informado'}), 400
+        
+        valor_centavos = int(valor_centavos)
+        
+        if valor_centavos > 100000:
+            return jsonify({
+                'error': f'Valor R$ {valor_centavos/100:.2f} nao permitido. Maximo: R$ 1.000,00'
+            }), 400
+        
+        print(f"Valor em centavos: {valor_centavos}")
+        
+        headers = {
+            'API-Key': EVOPAY_API_KEY,
+            'Content-Type': 'application/json'
         }
-    } catch (error) {
-        document.getElementById('pagamentoConteudo').innerHTML = `
-            <div style="background:rgba(255,68,68,0.1);border:1px solid #ff4444;padding:10px;border-radius:8px;margin:10px 0">
-                ❌ Erro: ${error.message}
-            </div>
-            <button class="btn-finalizar" onclick="gerarPixEvopay()">
-                🔄 Tentar Novamente
-            </button>
-        `;
-    }
-}
+        
+        payload = {
+            "amount": valor_centavos,
+            "callbackUrl": "https://magnatastore.netlify.app/",
+            "payerName": "Cliente Magnata Store",
+            "payerDocument": "12345678909",
+            "payerEmail": "cliente@magnata.com",
+            "externalReference": f"pedido_{valor_centavos}"
+        }
+        
+        print(f"Enviando para EvoPay: {payload}")
+        
+        response = requests.post(EVOPAY_URL, json=payload, headers=headers, timeout=30)
+        print(f"Resposta EvoPay: {response.status_code} - {response.text}")
+        
+        if response.status_code == 404:
+            url_sem_barra = "https://pix.evopay.cash/v1/pix"
+            response = requests.post(url_sem_barra, json=payload, headers=headers, timeout=30)
+            print(f"Tentativa sem barra: {response.status_code} - {response.text}")
+        
+        return jsonify(response.json()), response.status_code
+        
+    except requests.exceptions.Timeout:
+        return jsonify({'error': 'Tempo limite excedido'}), 504
+    except Exception as e:
+        print(f"Erro: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/verificar_pix/<transaction_id>', methods=['GET'])
+def verificar_pix(transaction_id):
+    return jsonify({
+        'status': 'pending',
+        'message': 'Verificacao manual necessaria.',
+        'transaction_id': transaction_id
+    })
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000, debug=True)
