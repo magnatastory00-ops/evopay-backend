@@ -51,18 +51,40 @@ def criar_pix():
             "externalReference": f"pedido_{int(valor_reais)}"
         }
         
-        print(f"Enviando: {payload}")
+        print(f"Enviando para EvoPay: {payload}")
         
         response = requests.post(EVOPAY_URL, json=payload, headers=headers, timeout=30)
-        print(f"Resposta: {response.status_code} - {response.text}")
+        print(f"Resposta EvoPay: {response.status_code} - {response.text}")
         
         data_resp = response.json()
         
+        # 🔥 PEGA OS DADOS DO PIX DA RESPOSTA
+        pix_data = data_resp.get('pix', {})
+        qr_code = pix_data.get('pix_qr_code') or data_resp.get('qr_code') or data_resp.get('qrCode') or ''
+        
+        # 🔥 TENTA PEGAR O CÓDIGO PIX EM VÁRIOS LUGARES
+        codigo_pix = (pix_data.get('pix_code') or 
+                     pix_data.get('brcode') or 
+                     pix_data.get('pix_qr_code') or 
+                     data_resp.get('pix_code') or 
+                     data_resp.get('brcode') or 
+                     data_resp.get('pix') or '')
+        
+        print(f"QR Code: {qr_code[:50] if qr_code else 'Nao encontrado'}...")
+        print(f"Código PIX: {codigo_pix[:50] if codigo_pix else 'Nao encontrado'}...")
+        
+        # 🔥 SALVA O QR CODE E CÓDIGO NA TRANSAÇÃO
         if response.ok and data_resp.get('id'):
             transacoes[data_resp['id']] = {
                 'status': 'pending',
-                'valor': valor_reais
+                'valor': valor_reais,
+                'qr_code': qr_code,
+                'codigo_pix': codigo_pix
             }
+        
+        # 🔥 ADICIONA OS DADOS NA RESPOSTA
+        data_resp['qr_code'] = qr_code
+        data_resp['codigo_pix'] = codigo_pix
         
         return jsonify(data_resp), response.status_code
         
@@ -90,10 +112,12 @@ def webhook():
 @app.route('/api/verificar_pix/<transaction_id>', methods=['GET'])
 def verificar_pix(transaction_id):
     if transaction_id in transacoes:
-        status = transacoes[transaction_id].get('status', 'pending')
+        dados = transacoes[transaction_id]
         return jsonify({
-            'status': status,
-            'transaction_id': transaction_id
+            'status': dados.get('status', 'pending'),
+            'transaction_id': transaction_id,
+            'qr_code': dados.get('qr_code', ''),
+            'codigo_pix': dados.get('codigo_pix', '')
         })
     
     return jsonify({
