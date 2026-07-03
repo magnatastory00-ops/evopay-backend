@@ -10,22 +10,27 @@ EVOPAY_URL = "https://pix.evopay.cash/v1/pix/"
 
 @app.route('/')
 def home():
-    return jsonify({"status": "EvoPay API Gateway rodando!", "version": "1.0"})
+    return jsonify({"status": "EvoPay API Gateway rodando!"})
 
-@app.route('/api/criar_pix', methods=['POST'])
+@app.route('/api/criar_pix', methods=['POST', 'OPTIONS'])
 def criar_pix():
+    if request.method == 'OPTIONS':
+        return '', 200
+    
     try:
-        data = request.json
+        data = request.get_json()
         print(f"Dados recebidos: {data}")
         
-        valor_centavos = data.get('amount')
+        valor = data.get('amount') if data else None
         
-        if not valor_centavos:
+        if not valor:
             return jsonify({'error': 'Valor nao informado'}), 400
         
-        if valor_centavos > 100000:
+        valor = int(valor)
+        
+        if valor > 100000:
             return jsonify({
-                'error': f'Valor R$ {valor_centavos/100:.2f} nao permitido. Maximo: R$ 1.000,00'
+                'error': f'Valor maximo R$ 1.000,00'
             }), 400
         
         headers = {
@@ -34,18 +39,14 @@ def criar_pix():
         }
         
         payload = {
-            "amount": valor_centavos,
-            "callbackUrl": "https://magnatastore.netlify.app/",
-            "payerName": "Cliente Magnata Store",
-            "payerDocument": "12345678909",
-            "payerEmail": "cliente@magnata.com",
-            "externalReference": f"pedido_{valor_centavos}"
+            "amount": valor,
+            "callbackUrl": "https://magnatastore.netlify.app/"
         }
         
-        print(f"Enviando para EvoPay: {payload}")
+        print(f"Enviando: {payload}")
         
         response = requests.post(EVOPAY_URL, json=payload, headers=headers, timeout=30)
-        print(f"Resposta EvoPay: {response.status_code} - {response.text}")
+        print(f"Resposta: {response.status_code} - {response.text}")
         
         return jsonify(response.json()), response.status_code
         
@@ -55,11 +56,7 @@ def criar_pix():
 
 @app.route('/api/verificar_pix/<transaction_id>', methods=['GET'])
 def verificar_pix(transaction_id):
-    return jsonify({
-        'status': 'pending',
-        'message': 'Verificacao manual necessaria.',
-        'transaction_id': transaction_id
-    })
+    return jsonify({'status': 'pending', 'transaction_id': transaction_id})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
