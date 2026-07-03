@@ -21,23 +21,22 @@ def criar_pix():
         data = request.get_json()
         print(f"Dados recebidos: {data}")
         
-        valor_centavos = data.get('amount') if data else None
+        valor = data.get('amount')
         
-        if not valor_centavos:
+        if not valor:
             return jsonify({'error': 'Valor nao informado'}), 400
         
-        # 🔥 CORREÇÃO: Valor já está em centavos, NÃO MULTIPLICA!
-        valor_centavos = int(valor_centavos)
+        # 🔥 CORREÇÃO: USA O VALOR EXATAMENTE COMO RECEBEU
+        valor_centavos = int(valor)
         
-        # 🔥 LIMITE: Máximo R$ 1.000 (100.000 centavos)
+        # 🔥 CONVERTE PARA REAIS SÓ PARA LOG
+        valor_reais = valor_centavos / 100
+        print(f"Valor: {valor_centavos} centavos = R$ {valor_reais:.2f}")
+        
         if valor_centavos > 100000:
             return jsonify({
                 'error': f'Valor maximo R$ 1.000,00'
             }), 400
-        
-        # 🔥 CONVERTE PARA REAIS SÓ PARA EXIBIR
-        valor_reais = valor_centavos / 100
-        print(f"Valor em centavos: {valor_centavos} (R$ {valor_reais:.2f})")
         
         headers = {
             'API-Key': EVOPAY_API_KEY,
@@ -49,10 +48,10 @@ def criar_pix():
             "callbackUrl": "https://magnatastore.netlify.app/"
         }
         
-        print(f"Enviando para EvoPay: {payload}")
+        print(f"Enviando: {payload}")
         
         response = requests.post(EVOPAY_URL, json=payload, headers=headers, timeout=30)
-        print(f"Resposta EvoPay: {response.status_code} - {response.text}")
+        print(f"Resposta: {response.status_code} - {response.text}")
         
         return jsonify(response.json()), response.status_code
         
@@ -66,4 +65,3 @@ def verificar_pix(transaction_id):
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
-
