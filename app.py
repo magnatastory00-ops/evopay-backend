@@ -35,7 +35,7 @@ def criar_pix():
         }
         
         payload = {
-            "amount": valor_centavos,
+            valor = float(data.get("amount"))
             "callbackUrl": "https://magnatastore.netlify.app/"
         }
         
